@@ -262,7 +262,7 @@
         </button>
         <button id="btn-settings" class="nav-btn" title="Settings">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.066 2.573c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.573 1.066c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.066 -2.573c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" />
+            <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.066 2.573c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.573 1.066c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.066 -2.573c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37.996 .607 2.296 .07 2.573 -1.066z" />
             <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
           </svg>
         </button>
@@ -327,40 +327,10 @@
       "use strict";
 
       // =====================================================================
-     // INDEXEDDB CLEANUP AND INITIALIZATION
-     // =====================================================================
+      // SCRAMJET PROXY INITIALIZATION
+      // Uses Scramjet core with BareMux connection and Epoxy transit
+      // =====================================================================
 
-     /**
-      * Clean up IndexedDB to prevent store not found errors
-      * This ensures a fresh state for Scramjet initialization
-      */
-     async function cleanupIndexedDB() {
-       try {
-         // Get all database names
-         const dbs = await indexedDB.databases();
-          
-         // Delete Scramjet-related databases to ensure clean state
-         for (const db of dbs) {
-           if (db.name && (db.name.includes('scramjet') || db.name.includes('Scramjet'))) {
-             const request = indexedDB.deleteDatabase(db.name);
-             request.onerror = () => console.warn(`Failed to delete database ${db.name}`);
-             request.onsuccess = () => console.debug(`Deleted database ${db.name}`);
-           }
-         }
-       } catch (err) {
-         console.debug('IndexedDB cleanup not available:', err.message);
-         // This is not critical - continue anyway
-       }
-     }
-
-     // Clean up IndexedDB on page load
-     window.addEventListener('load', cleanupIndexedDB);
-
-     // =====================================================================
-     // SCRAMJET PROXY INITIALIZATION
-     // Uses Scramjet core with BareMux connection and Epoxy transit
-     // =====================================================================
-      
       // Store Scramjet controller and client globally
       let scramjet = null;
       let scramjetConnection = null;
@@ -372,7 +342,7 @@
       async function initializeScramjet() {
         try {
           if (scramjetReady) return true;
-          
+
           // Load the Scramjet controller
           if (typeof $scramjetLoadController === 'undefined') {
             console.error('$scramjetLoadController not available. Ensure Scramjet core scripts are loaded.');
@@ -389,7 +359,7 @@
             scramjetConnection = new BareMuxConnection('/baremux/worker.js');
           } catch (err) {
             console.error('Failed to import BareMux:', err);
-            // Continue anyway - BareMux might not be needed for all operations
+            return false;
           }
 
           // Determine WebSocket protocol based on page protocol
@@ -402,7 +372,7 @@
               await scramjetConnection.setTransport('/epoxy-transit/index.mjs', [{ wisp: wispUrl }]);
             } catch (err) {
               console.error('Failed to set transport:', err);
-              // Continue - proxy might still work
+              return false;
             }
           }
 
@@ -411,7 +381,6 @@
           return true;
         } catch (err) {
           console.error('Failed to initialize Scramjet:', err);
-          // Continue without Scramjet - basic navigation might still work
           return false;
         }
       }
@@ -460,17 +429,13 @@
 
           // Wait for the service worker to be active
           await navigator.serviceWorker.ready;
-          
+
           // Send Wisp URL to service worker
           const wispUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/wisp/`;
-          
-          if (registration.active) {
-            registration.active.postMessage({
-              type: 'config',
-              wispurl: wispUrl
-            });
-          } else if (navigator.serviceWorker.controller) {
-            navigator.serviceWorker.controller.postMessage({
+
+          const targetWorker = registration.active || registration.waiting || registration.installing || navigator.serviceWorker.controller;
+          if (targetWorker) {
+            targetWorker.postMessage({
               type: 'config',
               wispurl: wispUrl
             });
@@ -564,10 +529,15 @@
 
       // --- Navigation ---
       async function navigateToUrl(input) {
-        // Register service worker and initialize Scramjet
-        await registerServiceWorker();
-        await initializeScramjet();
-        
+        // Initialize runtime in deterministic order: SW first, then Scramjet/BareMux.
+        const swOk = await registerServiceWorker();
+        const sjOk = await initializeScramjet();
+
+        if (!swOk || !sjOk) {
+          console.error('Proxy runtime initialization failed.', { swOk, sjOk });
+          return;
+        }
+
         const targetUrl = formatUrl(input, settings.searchEngine);
         const proxiedUrl = createProxiedUrl(targetUrl);
 
@@ -603,16 +573,16 @@
 
       function monitorIframeNavigation() {
         if (!currentFrame) return;
-        
+
         urlMonitorInterval = setInterval(() => {
           if (!currentFrame || !currentFrame.contentWindow) {
             clearInterval(urlMonitorInterval);
             return;
           }
-          
+
           // Don't update if in fullscreen mode
           if (document.fullscreenElement || document.webkitFullscreenElement) return;
-          
+
           // Don't update if user is typing in the navbar
           if (navbarUrlFocused || document.activeElement === navbarUrl) return;
 
@@ -691,7 +661,7 @@
       btnSettings.addEventListener("click", () => {
         settingsOpen = !settingsOpen;
         settingsPanel.style.display = settingsOpen ? "block" : "none";
-        
+
         if (settingsOpen) {
           // Populate current settings
           engineSelect.value = settings.searchEngine;

@@ -56,7 +56,7 @@ if (ScramjetServiceWorker) {
 // SERVICE WORKER LIFECYCLE
 // =====================================================================
 
-self.addEventListener('install', (event) => {
+self.addEventListener('install', () => {
     self.skipWaiting();
 });
 
@@ -70,6 +70,14 @@ self.addEventListener('activate', (event) => {
 
 let wispConfig = {};
 
+// Ensure SW always has a fallback WISP URL even if postMessage never arrives.
+function getDefaultWispUrl() {
+    const wsProtocol = self.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${wsProtocol}//${self.location.host}/wisp/`;
+}
+
+wispConfig.wispurl = getDefaultWispUrl();
+
 // Prevent race condition: Create a promise that resolves when the config message is received
 let resolveConfigReady;
 const configReadyPromise = new Promise(resolve => {
@@ -78,25 +86,34 @@ const configReadyPromise = new Promise(resolve => {
 
 // Set a timeout for config message (10 seconds)
 let configTimeout = setTimeout(() => {
-    console.warn('Service Worker: Config message not received within 10 seconds');
+    console.warn('Service Worker: Config message not received within 10 seconds, using default WISP URL');
+    if (!wispConfig.wispurl) {
+        wispConfig.wispurl = getDefaultWispUrl();
+    }
     if (resolveConfigReady) {
         resolveConfigReady();
         resolveConfigReady = null;
     }
 }, 10000);
 
+// Resolve immediately if default config exists.
+if (resolveConfigReady && wispConfig.wispurl) {
+    resolveConfigReady();
+    resolveConfigReady = null;
+}
+
 // Listen for configuration from the main page
 self.addEventListener("message", ({ data }) => {
-    if (data.type === "config" && data.wispurl) {
+    if (data && data.type === "config" && data.wispurl) {
         wispConfig.wispurl = data.wispurl;
         console.log('Service Worker received WISP URL:', data.wispurl);
-        
+
         // Clear timeout and resolve
         if (configTimeout) {
             clearTimeout(configTimeout);
             configTimeout = null;
         }
-        
+
         if (resolveConfigReady) {
             resolveConfigReady();
             resolveConfigReady = null;
@@ -108,6 +125,9 @@ self.addEventListener("message", ({ data }) => {
 // PROXY ROUTING
 // =====================================================================
 
+// Load scramjet config once to avoid repeated IndexedDB transaction races.
+let scramjetConfigLoaded = false;
+
 // Main fetch handler - routes through Scramjet
 self.addEventListener("fetch", (event) => {
     event.respondWith((async () => {
@@ -117,15 +137,15 @@ self.addEventListener("fetch", (event) => {
         }
 
         try {
-            // Wait for the scramjet config to be loaded before routing
-            // This can prevent race conditions on initial load
-            try {
-                await scramjet.loadConfig();
-            } catch (configErr) {
-                console.error('Scramjet loadConfig error (likely IndexedDB):', configErr);
-                // Continue anyway - Scramjet might still work
+            if (!scramjetConfigLoaded) {
+                try {
+                    await scramjet.loadConfig();
+                    scramjetConfigLoaded = true;
+                } catch (configErr) {
+                    console.error('Scramjet loadConfig error (likely IndexedDB):', configErr);
+                }
             }
-            
+
             // Check if Scramjet should route this request
             if (scramjet.route(event)) {
                 try {
@@ -138,7 +158,7 @@ self.addEventListener("fetch", (event) => {
         } catch (err) {
             console.error('Scramjet processing error:', err);
         }
-        
+
         // Pass through non-routed requests to network
         return fetch(event.request);
     })());
@@ -155,42 +175,38 @@ if (scramjet) {
             try {
                 // Use a single, persistent BareMux client instance on the scramjet object
                 if (!scramjet.client) {
-                    // Wait for the WISP URL to be sent from the main page
+                    // Wait for the WISP URL to be sent from the main page (or default fallback)
                     await configReadyPromise;
 
                     if (!wispConfig.wispurl) {
-                        console.error("WISP URL is missing. Cannot configure BareMux.");
-                        return new Response("WISP URL configuration failed in SW.", { 
-                            status: 500, 
-                            statusText: "Internal Server Error" 
-                        });
+                        wispConfig.wispurl = getDefaultWispUrl();
                     }
 
                     // Check if BareMux is available
                     if (typeof BareMux === 'undefined') {
                         console.error("BareMux is not available.");
-                        return new Response("BareMux not available.", { 
-                            status: 500, 
-                            statusText: "Internal Server Error" 
+                        return new Response("BareMux not available.", {
+                            status: 500,
+                            statusText: "Internal Server Error"
                         });
                     }
 
                     // Initialize BareMux connection
                     const connection = new BareMux.BareMuxConnection('/baremux/worker.js');
-                    
+
                     try {
                         // Set Epoxy/libcurl transport with WISP server
-                        await connection.setTransport('/epoxy-transit/index.mjs', [{ 
-                            wisp: wispConfig.wispurl 
+                        await connection.setTransport('/epoxy-transit/index.mjs', [{
+                            wisp: wispConfig.wispurl
                         }]);
-                        
+
                         // Store the connection for future requests
                         scramjet.client = connection;
                     } catch (err) {
                         console.error('Failed to set BareMux transport:', err);
-                        return new Response("BareMux configuration failed.", { 
-                            status: 500, 
-                            statusText: "Internal Server Error" 
+                        return new Response("BareMux configuration failed.", {
+                            status: 500,
+                            statusText: "Internal Server Error"
                         });
                     }
                 }
@@ -208,9 +224,9 @@ if (scramjet) {
                 });
             } catch (err) {
                 console.error('Scramjet request handler error:', err);
-                return new Response("Proxy error: " + err.message, { 
-                    status: 502, 
-                    statusText: "Bad Gateway" 
+                return new Response("Proxy error: " + err.message, {
+                    status: 502,
+                    statusText: "Bad Gateway"
                 });
             }
         })();
