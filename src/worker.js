@@ -18,12 +18,7 @@ export default {
     }
     
     // Get response from ASSETS binding
-    let response = null;
-    if (env.ASSETS) {
-      response = await env.ASSETS.fetch(request);
-    } else {
-      return new Response('Asset serving not configured', { status: 500 });
-    }
+    let response = await env.ASSETS.fetch(request);
 
     // Add security headers for HTML responses
     if (response.headers.get('content-type')?.includes('text/html')) {

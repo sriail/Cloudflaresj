@@ -3,6 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Suppress the automatic /favicon.ico browser request that returns 500 -->
+    <link rel="icon" href="data:,">
     <title>Scramjet</title>
     <style>
       /* --- CSS Variables / Theming --- */
@@ -363,6 +365,19 @@
           // Initialize controller: opens IndexedDB schema and pushes config to SW if active
           await scramjet.init();
 
+          // Belt-and-suspenders: ask the active SW to load the Scramjet config from
+          // IDB directly.  scramjet.init() above has already written the config to
+          // IDB, but its own postMessage targets navigator.serviceWorker.controller
+          // which can still be null on the very first install (clients.claim() may
+          // not have fired yet).  Sending triggerLoadConfig to registration.active
+          // bypasses that race entirely.
+          try {
+            const reg = await navigator.serviceWorker.getRegistration('/');
+            if (reg?.active) {
+              reg.active.postMessage({ type: 'triggerLoadConfig' });
+            }
+          } catch (_) { /* ignore — SW will receive the loadConfig from controller once claimed */ }
+
           // Initialize BareMux connection (also registers the port-exchange listener so
           // the SW's internal BareClient can obtain a SharedWorker port immediately)
           try {
@@ -440,6 +455,20 @@
 
           // Wait for the service worker to be active
           await navigator.serviceWorker.ready;
+
+          // If the SW has just been installed for the first time it will not be
+          // controlling this page yet (that requires clients.claim() to fire in
+          // the SW's activate handler).  Wait up to 3 s for the controller to
+          // become available so that scramjet.init()'s postMessage — which
+          // targets navigator.serviceWorker.controller — is not silently dropped.
+          if (!navigator.serviceWorker.controller) {
+            await Promise.race([
+              new Promise(resolve =>
+                navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true })
+              ),
+              new Promise(resolve => setTimeout(resolve, 3000)),
+            ]);
+          }
 
           // Send Wisp URL to service worker
           const wispUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/wisp/`;

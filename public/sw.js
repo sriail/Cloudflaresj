@@ -194,7 +194,9 @@ if (resolveConfigReady && wispConfig.wispurl) {
 
 // Listen for configuration from the main page
 self.addEventListener("message", ({ data }) => {
-    if (data && data.type === "config" && data.wispurl) {
+    if (!data) return;
+
+    if (data.type === "config" && data.wispurl) {
         wispConfig.wispurl = data.wispurl;
         console.log('Service Worker received WISP URL:', data.wispurl);
 
@@ -208,6 +210,17 @@ self.addEventListener("message", ({ data }) => {
             resolveConfigReady();
             resolveConfigReady = null;
         }
+    }
+
+    // The page sends this after scramjet.init() has written the Scramjet config
+    // to IDB.  Scramjet's own postMessage targets navigator.serviceWorker.controller
+    // which can be null on the very first install (controller not yet set until
+    // clients.claim() fires).  This message lets us load the config from IDB
+    // even when that automatic postMessage was dropped.
+    if (data.type === "triggerLoadConfig" && scramjet && !scramjet.config) {
+        scramjet.loadConfig().catch(err =>
+            console.warn('SW: loadConfig via trigger failed:', err)
+        );
     }
 });
 
