@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scramjet</title>
+    <style>
+      /* --- CSS Variables / Theming --- */
+      :root,
+      [data-theme="light"] {
+        --bg: #f5f5f5;
+        --bg-nav: #ffffff;
+        --bg-card: #ffffff;
+        --text: #1a1a1a;
+        --text-muted: #666;
+        --border: #ddd;
+        --accent: #8a9bb2;
+        --input-bg: #f0f0f0;
+        --btn-hover: #e0e0e0;
+        --settings-bg: #fafafa;
+      }
+      [data-theme="dark"] {
+        --bg: #121212;
+        --bg-nav: #1e1e1e;
+        --bg-card: #252525;
+        --text: #e0e0e0;
+        --text-muted: #999;
+        --border: #333;
+        --accent: #8a9bb2;
+        --input-bg: #2a2a2a;
+        --btn-hover: #383838;
+        --settings-bg: #252525;
+      }
+
+      /* --- Reset & Base --- */
+      *,
+      *::before,
+      *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      /* --- Navbar --- */
+      #navbar {
+        display: flex;
+        align-items: center;
+        height: 48px;
+        padding: 0 12px;
+        background: var(--bg-nav);
+        border-bottom: 1px solid var(--border);
+        gap: 8px;
+        z-index: 1000;
+        position: relative;
+      }
+      .nav-center {
+        display: flex;
+        align-items: center;
+        flex: 1;
+        gap: 4px;
+        min-width: 0;
+      }
+      .nav-right {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .nav-btn {
+        background: none;
+        border: none;
+        color: var(--text);
+        cursor: pointer;
+        padding: 6px;
+        border-radius: 6px;
+        font-size: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s;
+      }
+      .nav-btn:hover {
+        background: var(--btn-hover);
+      }
+      #navbar-form {
+        flex: 1;
+        display: flex;
+        min-width: 0;
+      }
+      #navbar-url {
+        width: 100%;
+        padding: 6px 12px;
+        font-size: 14px;
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: var(--input-bg);
+        color: var(--text);
+        outline: none;
+        transition: border 0.2s;
+      }
+      #navbar-url:focus {
+        border-color: var(--accent);
+      }
+
+      /* --- Home Content --- */
+      #home-content {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: calc(100vh - 48px);
+      }
+      .home-center {
+        text-align: center;
+      }
+      .home-logo {
+        width: 80px;
+        height: 80px;
+        margin-bottom: 16px;
+        fill: var(--accent);
+      }
+      .home-center h1 {
+        margin-bottom: 24px;
+        font-size: 28px;
+        font-weight: 600;
+      }
+      #home-form {
+        display: flex;
+        justify-content: center;
+      }
+      #home-search {
+        width: 400px;
+        max-width: 90vw;
+        padding: 12px 20px;
+        font-size: 16px;
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        background: var(--input-bg);
+        color: var(--text);
+        outline: none;
+        transition: border 0.2s, box-shadow 0.2s;
+      }
+      #home-search:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(138, 155, 178, 0.2);
+      }
+
+      /* --- Frame Container --- */
+      #frame-container {
+        display: none;
+        height: calc(100vh - 48px);
+        width: 100%;
+      }
+      #proxy-frame {
+        width: 100%;
+        height: 100%;
+        border: none;
+      }
+
+      /* --- Settings Panel --- */
+      #settings-panel {
+        display: none;
+        position: absolute;
+        top: 48px;
+        right: 12px;
+        width: 320px;
+        max-width: calc(100vw - 24px);
+        background: var(--settings-bg);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+        z-index: 999;
+        padding: 20px;
+      }
+      .settings-content h2 {
+        font-size: 18px;
+        margin-bottom: 16px;
+      }
+      .settings-group {
+        margin-bottom: 16px;
+      }
+      .settings-group label {
+        display: block;
+        font-size: 13px;
+        color: var(--text-muted);
+        margin-bottom: 6px;
+      }
+      .settings-group select {
+        width: 100%;
+        padding: 8px 12px;
+        font-size: 14px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--input-bg);
+        color: var(--text);
+        outline: none;
+      }
+      .toggle-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .toggle-row input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+      }
+      .settings-btn {
+        width: 100%;
+        padding: 10px;
+        font-size: 14px;
+        background: var(--accent);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: opacity 0.15s;
+      }
+      .settings-btn:hover {
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Top Navbar -->
+    <nav id="navbar">
+      <div class="nav-center">
+        <button id="btn-back" class="nav-btn" title="Back">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12l14 0" /><path d="M5 12l6 6" /><path d="M5 12l6 -6" />
+          </svg>
+        </button>
+        <button id="btn-forward" class="nav-btn" title="Forward">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12l14 0" /><path d="M19 12l-6 6" /><path d="M19 12l-6 -6" />
+          </svg>
+        </button>
+        <button id="btn-reload" class="nav-btn" title="Reload">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" /><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" />
+          </svg>
+        </button>
+        <form id="navbar-form" autocomplete="off">
+          <input id="navbar-url" type="text" placeholder="Search or enter URL" />
+        </form>
+      </div>
+      <div class="nav-right">
+        <button id="btn-home" class="nav-btn" title="Home">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12l-2 0l9 -9l9 9l-2 0" /><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" /><path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6" />
+          </svg>
+        </button>
+        <button id="btn-fullscreen" class="nav-btn" title="Fullscreen">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 8V6a2 2 0 0 1 2-2h2" /><path d="M4 16v2a2 2 0 0 0 2 2h2" /><path d="M16 4h2a2 2 0 0 1 2 2v2" /><path d="M16 20h2a2 2 0 0 0 2-2v-2" />
+          </svg>
+        </button>
+        <button id="btn-settings" class="nav-btn" title="Settings">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.066 2.573c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.573 1.066c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.066 -2.573c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z" />
+            <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+          </svg>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Settings panel (inline) -->
+    <div id="settings-panel">
+      <div class="settings-content">
+        <h2>Settings</h2>
+        <div class="settings-group">
+          <label for="search-engine-select">Search Engine</label>
+          <select id="search-engine-select">
+            <option value="https://duckduckgo.com/?q=%s">DuckDuckGo</option>
+            <option value="https://search.aol.com/aol/search?q=%s">AOL</option>
+            <option value="https://www.google.com/search?q=%s">Google</option>
+            <option value="https://search.brave.com/search?q=%s">Brave</option>
+            <option value="https://www.bing.com/search?q=%s">Bing</option>
+            <option value="https://yandex.com/search/?text=%s">Yandex</option>
+            <option value="https://search.yahoo.com/search?p=%s">Yahoo</option>
+          </select>
+        </div>
+        <div class="settings-group">
+          <label for="adblock-toggle">Ad Blocker</label>
+          <div class="toggle-row">
+            <input type="checkbox" id="adblock-toggle" />
+            <span id="adblock-label">Off</span>
+          </div>
+        </div>
+        <div class="settings-group">
+          <label for="theme-select">Theme</label>
+          <select id="theme-select">
+            <option value="system">System</option>
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </div>
+        <button id="settings-save" class="settings-btn">Save</button>
+      </div>
+    </div>
+
+    <!-- Homepage content -->
+    <div id="home-content">
+      <div class="home-center">
+        <svg class="home-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h1>Scramjet</h1>
+        <form id="home-form" autocomplete="off">
+          <input id="home-search" type="text" placeholder="Search or enter URL" autofocus />
+        </form>
+      </div>
+    </div>
+
+    <!-- Proxy iframe container -->
+    <div id="frame-container"></div>
+
+    <script>
+      "use strict";
+
+      // =====================================================================
+      // PROXY FRAMEWORK CONFIGURATION
+      // Modify this object to match your specific proxy backend (e.g., Ultraviolet, Scramjet)
+      // =====================================================================
+      const ProxyConfig = {
+        prefix: "/service/", // The local prefix your proxy uses
+        encodeUrl: function (url) {
+          // Default: simple encoding. Adjust to match your framework (e.g., Ultraviolet uses bare encoding)
+          return this.prefix + encodeURIComponent(url);
+        },
+        decodeUrl: function (proxiedUrl) {
+          try {
+            const urlObj = new URL(proxiedUrl);
+            if (urlObj.pathname.startsWith(this.prefix)) {
+              return decodeURIComponent(urlObj.pathname.substring(this.prefix.length));
+            }
+          } catch (e) {}
+          return proxiedUrl;
+        },
+        registerServiceWorker: async function () {
+          // Register your proxy service worker here.
+          // Example: await navigator.serviceWorker.register('/sw.js', { scope: this.prefix });
+          if ("serviceWorker" in navigator) {
+            try {
+              await navigator.serviceWorker.register("/sw.js");
+            } catch (err) {
+              console.error("Service Worker registration failed:", err);
+            }
+          }
+        }
+      };
+
+      // --- Settings Helpers ---
+      function loadSettings() {
+        const defaults = {
+          searchEngine: "https://duckduckgo.com/?q=%s",
+          adblock: false,
+          theme: "system",
+        };
+        try {
+          const saved = JSON.parse(localStorage.getItem("proxy-settings"));
+          return Object.assign(defaults, saved);
+        } catch (e) {
+          return defaults;
+        }
+      }
+
+      function saveSettings(settings) {
+        localStorage.setItem("proxy-settings", JSON.stringify(settings));
+      }
+
+      function applyTheme(theme) {
+        let resolved = theme;
+        if (theme === "system") {
+          resolved = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.setAttribute("data-theme", resolved);
+
+        // Apply theme to proxy iframe if it exists
+        const frame = document.getElementById("proxy-frame");
+        if (frame) {
+          try {
+            frame.contentDocument.documentElement.setAttribute("data-theme", resolved);
+          } catch (e) {
+            // Cross-origin, ignore
+          }
+        }
+      }
+
+      // --- State ---
+      let settings = loadSettings();
+      let settingsOpen = false;
+      let currentFrame = null;
+      let urlMonitorInterval = null;
+      let navbarUrlFocused = false;
+
+      // --- Apply theme on load ---
+      applyTheme(settings.theme);
+
+      // Listen for system theme changes
+      window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+        if (settings.theme === "system") applyTheme("system");
+      });
+
+      // --- DOM Refs ---
+      const homeContent = document.getElementById("home-content");
+      const frameContainer = document.getElementById("frame-container");
+      const navbarUrl = document.getElementById("navbar-url");
+      const navbarForm = document.getElementById("navbar-form");
+      const homeForm = document.getElementById("home-form");
+      const homeSearch = document.getElementById("home-search");
+      const settingsPanel = document.getElementById("settings-panel");
+      const btnBack = document.getElementById("btn-back");
+      const btnForward = document.getElementById("btn-forward");
+      const btnReload = document.getElementById("btn-reload");
+      const btnHome = document.getElementById("btn-home");
+      const btnSettings = document.getElementById("btn-settings");
+      const btnFullscreen = document.getElementById("btn-fullscreen");
+      const navbar = document.getElementById("navbar");
+
+      // --- URL Formatting ---
+      function formatUrl(input, searchEngine) {
+        input = input.trim();
+        // Check if it looks like a URL
+        const isUrl = /^https?:\/\//i.test(input) || (/\.[a-z]{2,}$/i.test(input) && !/\s/.test(input));
+        if (isUrl) {
+          return input.startsWith("http") ? input : "https://" + input;
+        }
+        return searchEngine.replace("%s", encodeURIComponent(input));
+      }
+
+      // --- Navigation ---
+      async function navigateToUrl(input) {
+        await ProxyConfig.registerServiceWorker();
+        
+        const targetUrl = formatUrl(input, settings.searchEngine);
+        const proxiedUrl = ProxyConfig.encodeUrl(targetUrl);
+
+        // Remove old frame if exists
+        if (currentFrame) {
+          currentFrame.remove();
+        }
+
+        // Clear any existing URL monitor interval
+        if (urlMonitorInterval) {
+          clearInterval(urlMonitorInterval);
+          urlMonitorInterval = null;
+        }
+
+        currentFrame = document.createElement("iframe");
+        currentFrame.id = "proxy-frame";
+        frameContainer.appendChild(currentFrame);
+
+        // Show frame, hide home
+        homeContent.style.display = "none";
+        frameContainer.style.display = "block";
+
+        // Close settings if open
+        settingsPanel.style.display = "none";
+        settingsOpen = false;
+
+        currentFrame.src = proxiedUrl;
+        navbarUrl.value = targetUrl; // Show clean URL to user
+
+        monitorIframeNavigation();
+      }
+
+      function monitorIframeNavigation() {
+        if (!currentFrame) return;
+        
+        urlMonitorInterval = setInterval(() => {
+          if (!currentFrame || !currentFrame.contentWindow) {
+            clearInterval(urlMonitorInterval);
+            return;
+          }
+          
+          // Don't update if in fullscreen mode
+          if (document.fullscreenElement || document.webkitFullscreenElement) return;
+          
+          // Don't update if user is typing in the navbar
+          if (navbarUrlFocused || document.activeElement === navbarUrl) return;
+
+          try {
+            const iframeUrl = currentFrame.contentWindow.location.href;
+            if (iframeUrl && !iframeUrl.startsWith("about:blank")) {
+              const decodedUrl = ProxyConfig.decodeUrl(iframeUrl);
+              if (decodedUrl && decodedUrl !== navbarUrl.value && decodedUrl !== "about:blank") {
+                navbarUrl.value = decodedUrl;
+              }
+            }
+          } catch (e) {
+            // Cross-origin access blocked (expected depending on proxy setup)
+          }
+        }, 500);
+      }
+
+      // --- Event Handlers ---
+      navbarUrl.addEventListener("focus", () => (navbarUrlFocused = true));
+      navbarUrl.addEventListener("blur", () => (navbarUrlFocused = false));
+
+      homeForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const val = homeSearch.value.trim();
+        if (val) navigateToUrl(val);
+      });
+
+      navbarForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const val = navbarUrl.value.trim();
+        if (val) navigateToUrl(val);
+      });
+
+      btnBack.addEventListener("click", () => {
+        if (currentFrame) {
+          try { currentFrame.contentWindow.history.back(); } catch (e) {}
+        }
+      });
+
+      btnForward.addEventListener("click", () => {
+        if (currentFrame) {
+          try { currentFrame.contentWindow.history.forward(); } catch (e) {}
+        }
+      });
+
+      btnReload.addEventListener("click", () => {
+        if (currentFrame) {
+          try { currentFrame.contentWindow.location.reload(); } catch (e) {}
+        }
+      });
+
+      btnHome.addEventListener("click", () => {
+        if (currentFrame) {
+          currentFrame.remove();
+          currentFrame = null;
+        }
+        if (urlMonitorInterval) {
+          clearInterval(urlMonitorInterval);
+          urlMonitorInterval = null;
+        }
+        frameContainer.style.display = "none";
+        settingsPanel.style.display = "none";
+        settingsOpen = false;
+        homeContent.style.display = "flex";
+        navbarUrl.value = "";
+        homeSearch.focus();
+      });
+
+      // Settings logic
+      const engineSelect = document.getElementById("search-engine-select");
+      const adblockToggle = document.getElementById("adblock-toggle");
+      const adblockLabel = document.getElementById("adblock-label");
+      const themeSelect = document.getElementById("theme-select");
+      const saveBtn = document.getElementById("settings-save");
+
+      btnSettings.addEventListener("click", () => {
+        settingsOpen = !settingsOpen;
+        settingsPanel.style.display = settingsOpen ? "block" : "none";
+        
+        if (settingsOpen) {
+          // Populate current settings
+          engineSelect.value = settings.searchEngine;
+          adblockToggle.checked = settings.adblock;
+          adblockLabel.textContent = settings.adblock ? "On" : "Off";
+          themeSelect.value = settings.theme;
+        }
+      });
+
+      adblockToggle.addEventListener("change", () => {
+        adblockLabel.textContent = adblockToggle.checked ? "On" : "Off";
+      });
+
+      saveBtn.addEventListener("click", () => {
+        settings.searchEngine = engineSelect.value;
+        settings.adblock = adblockToggle.checked;
+        settings.theme = themeSelect.value;
+        saveSettings(settings);
+        applyTheme(settings.theme);
+        settingsPanel.style.display = "none";
+        settingsOpen = false;
+      });
+
+      // Fullscreen logic
+      btnFullscreen.addEventListener("click", () => {
+        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+          const elem = document.documentElement;
+          if (elem.requestFullscreen) elem.requestFullscreen();
+          else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+          else if (elem.msRequestFullscreen) elem.msRequestFullscreen();
+        } else {
+          if (document.exitFullscreen) document.exitFullscreen();
+          else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+          else if (document.msExitFullscreen) document.msExitFullscreen();
+        }
+      });
+
+      function handleFullscreenChange() {
+        if (document.fullscreenElement || document.webkitFullscreenElement) {
+          navbar.style.display = "none";
+          frameContainer.style.height = "100vh";
+        } else {
+          navbar.style.display = "flex";
+          frameContainer.style.height = "calc(100vh - 48px)";
+        }
+      }
+
+      document.addEventListener("fullscreenchange", handleFullscreenChange);
+      document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+    </script>
+  </body>
+</html>
