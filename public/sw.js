@@ -1,5 +1,5 @@
 /**
- * Service Worker for Scramjet Proxy
+ * Service Worker for Scramjet Proxy - DEBUG VERSION
  * Handles all proxy routing and integrates with BareMux and Epoxy transit
  */
 
@@ -11,7 +11,7 @@ const basePath = swPath.substring(0, swPath.lastIndexOf('/') + 1);
 self.basePath = basePath;
 self.$scramjet = {
     files: {
-        wasm: '/sj-core/scramjet.wasm.wasm',    // Note: Double .wasm extension is intentional (Scramjet naming convention)
+        wasm: '/sj-core/scramjet.wasm.wasm',
         sync: '/sj-core/scramjet.sync.js',
     }
 };
@@ -20,10 +20,7 @@ self.$scramjet = {
 let ScramjetServiceWorker = null;
 
 try {
-    // Import Scramjet core scripts
     importScripts('/sj-core/scramjet.all.js');
-
-    // Check if the Scramjet worker loader is available
     if (typeof $scramjetLoadWorker === 'function') {
         const scramjetWorker = $scramjetLoadWorker();
         ScramjetServiceWorker = scramjetWorker.ScramjetServiceWorker;
@@ -43,22 +40,6 @@ try {
 // INDEXEDDB SCHEMA SETUP
 // =====================================================================
 
-/**
- * Ensure the "$scramjet" IndexedDB database has all required object stores.
- *
- * ScramjetServiceWorker opens this database in its constructor and in
- * loadConfig() but does NOT provide an onupgradeneeded handler.  On a
- * fresh install that means the database is created empty, causing every
- * subsequent objectStore() call to throw NotFoundError inside an async
- * callback whose Promise is never resolved or rejected — freezing every
- * fetch event indefinitely.
- *
- * We open the database here with an onupgradeneeded handler so the
- * stores exist before Scramjet ever touches the database.  If the
- * database was previously created empty (version 1, no stores) we
- * delete and recreate it because IDB versioning prevents adding stores
- * without a version bump once the database already exists at version 1.
- */
 function ensureIDBSchema() {
     const REQUIRED_STORES = [
         'config', 'cookies', 'redirectTrackers',
@@ -89,9 +70,6 @@ function ensureIDBSchema() {
                 return;
             }
 
-            // Database is at version 1 but is missing stores (it was created
-            // by an earlier open call that had no onupgradeneeded handler).
-            // Delete it so we can recreate it with all required stores.
             const delReq = indexedDB.deleteDatabase('$scramjet');
             delReq.onsuccess = delReq.onerror = () => {
                 const newReq = indexedDB.open('$scramjet', 1);
@@ -104,7 +82,7 @@ function ensureIDBSchema() {
             };
         };
 
-        req.onerror = () => resolve(); // Don't block on unexpected IDB errors
+        req.onerror = () => resolve();
     });
 }
 
@@ -112,11 +90,6 @@ function ensureIDBSchema() {
 // LAZY SCRAMJET INITIALIZATION
 // =====================================================================
 
-/**
- * ScramjetServiceWorker is constructed lazily, after the IDB schema is
- * guaranteed to exist.  A single Promise is used so construction happens
- * exactly once regardless of how many concurrent fetch events trigger it.
- */
 let scramjet = null;
 let scramjetInitPromise = null;
 
@@ -127,6 +100,8 @@ function initScramjet() {
         if (!ScramjetServiceWorker) return;
         try {
             scramjet = new ScramjetServiceWorker();
+            console.log('[SW:INIT] ScramjetServiceWorker instance created');
+            console.log('[SW:INIT] scramjet.config:', scramjet.config);
             setupScramjetRequestHandler();
         } catch (err) {
             console.error('Failed to initialize ScramjetServiceWorker:', err);
@@ -143,14 +118,17 @@ function initScramjet() {
 // =====================================================================
 
 self.addEventListener('install', () => {
+    console.log('[SW:INSTALL] Service Worker installing');
     self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-    // Wait for Scramjet (and IDB schema) to be ready before claiming clients
-    // so that the first fetch event is never handled with an uninitialised SW.
+    console.log('[SW:ACTIVATE] Service Worker activating');
     event.waitUntil(
-        initScramjet().then(() => self.clients.claim())
+        initScramjet().then(() => {
+            console.log('[SW:ACTIVATE] Scramjet initialized, claiming clients');
+            return self.clients.claim();
+        })
     );
 });
 
@@ -160,7 +138,6 @@ self.addEventListener('activate', (event) => {
 
 let wispConfig = {};
 
-// Ensure SW always has a fallback WISP URL even if postMessage never arrives.
 function getDefaultWispUrl() {
     const wsProtocol = self.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${wsProtocol}//${self.location.host}/wisp/`;
@@ -168,15 +145,13 @@ function getDefaultWispUrl() {
 
 wispConfig.wispurl = getDefaultWispUrl();
 
-// Prevent race condition: Create a promise that resolves when the config message is received
 let resolveConfigReady;
 const configReadyPromise = new Promise(resolve => {
     resolveConfigReady = resolve;
 });
 
-// Set a timeout for config message (10 seconds)
 let configTimeout = setTimeout(() => {
-    console.warn('Service Worker: Config message not received within 10 seconds, using default WISP URL');
+    console.warn('[SW:CONFIG] Config message not received within 10 seconds, using default');
     if (!wispConfig.wispurl) {
         wispConfig.wispurl = getDefaultWispUrl();
     }
@@ -186,21 +161,18 @@ let configTimeout = setTimeout(() => {
     }
 }, 10000);
 
-// Resolve immediately if default config exists.
 if (resolveConfigReady && wispConfig.wispurl) {
     resolveConfigReady();
     resolveConfigReady = null;
 }
 
-// Listen for configuration from the main page
 self.addEventListener("message", ({ data }) => {
     if (!data) return;
 
     if (data.type === "config" && data.wispurl) {
         wispConfig.wispurl = data.wispurl;
-        console.log('Service Worker received WISP URL:', data.wispurl);
+        console.log('[SW:CONFIG] Received WISP URL:', data.wispurl);
 
-        // Clear timeout and resolve
         if (configTimeout) {
             clearTimeout(configTimeout);
             configTimeout = null;
@@ -212,12 +184,8 @@ self.addEventListener("message", ({ data }) => {
         }
     }
 
-    // The page sends this after scramjet.init() has written the Scramjet config
-    // to IDB.  Scramjet's own postMessage targets navigator.serviceWorker.controller
-    // which can be null on the very first install (controller not yet set until
-    // clients.claim() fires).  This message lets us load the config from IDB
-    // even when that automatic postMessage was dropped.
     if (data.type === "triggerLoadConfig" && scramjet && !scramjet.config) {
+        console.log('[SW:MESSAGE] Triggering loadConfig via message');
         scramjet.loadConfig().catch(err =>
             console.warn('SW: loadConfig via trigger failed:', err)
         );
@@ -230,30 +198,53 @@ self.addEventListener("message", ({ data }) => {
 
 self.addEventListener("fetch", (event) => {
     event.respondWith((async () => {
+        console.log('[SW:FETCH] Request:', event.request.url, 'Method:', event.request.method);
+
         await initScramjet();
 
         if (!scramjet) {
+            console.log('[SW:FETCH] Scramjet not available, network fallback');
             return fetch(event.request);
         }
 
         try {
-            // Wait for config if not yet loaded
+            // Load config if missing
             if (!scramjet.config) {
+                console.log('[SW:FETCH] Config missing, attempting loadConfig()');
                 try {
                     await scramjet.loadConfig();
+                    console.log('[SW:FETCH] Config loaded successfully');
+                    console.log('[SW:FETCH] Config object:', scramjet.config);
                 } catch (err) {
-                    console.warn('Failed to load Scramjet config:', err);
+                    console.warn('[SW:FETCH] loadConfig failed:', err);
                     return fetch(event.request);
                 }
+            } else {
+                console.log('[SW:FETCH] Config already available');
+                console.log('[SW:FETCH] Config prefix:', scramjet.config?.prefix);
             }
 
-            if (scramjet.route(event)) {
-                return await scramjet.fetch(event);
+            // Check if request should be routed
+            console.log('[SW:FETCH] Checking if request should be routed...');
+            const shouldRoute = scramjet.route(event);
+            console.log('[SW:FETCH] shouldRoute:', shouldRoute);
+
+            if (shouldRoute) {
+                console.log('[SW:FETCH] Routing through Scramjet proxy');
+                try {
+                    return await scramjet.fetch(event);
+                } catch (fetchErr) {
+                    console.error('[SW:FETCH] Scramjet fetch error:', fetchErr);
+                    // Fall through to network
+                }
+            } else {
+                console.log('[SW:FETCH] Request does not match routing pattern, network fallback');
             }
         } catch (err) {
-            console.error('Scramjet processing error:', err);
+            console.error('[SW:FETCH] Error in routing logic:', err);
         }
 
+        console.log('[SW:FETCH] Final fallback to network for:', event.request.url);
         return fetch(event.request);
     })());
 });
@@ -262,50 +253,53 @@ self.addEventListener("fetch", (event) => {
 // SCRAMJET REQUEST HANDLER
 // =====================================================================
 
-// Called once from initScramjet() after the instance is created.
 function setupScramjetRequestHandler() {
+    console.log('[SW:HANDLER] Setting up Scramjet request handler');
+    
     scramjet.addEventListener("request", async (e) => {
+        console.log('[SW:HANDLER:REQUEST] Internal request:', e.url);
+        
         e.response = (async () => {
             try {
-                // Use a single, persistent BareMux client instance on the scramjet object
+                // Use a single, persistent BareMux client instance
                 if (!scramjet.client) {
-                    // Wait for the WISP URL to be sent from the main page (or default fallback)
+                    console.log('[SW:HANDLER] Creating new BareMux client');
                     await configReadyPromise;
 
                     if (!wispConfig.wispurl) {
                         wispConfig.wispurl = getDefaultWispUrl();
                     }
 
-                    // Check if BareMux is available
+                    console.log('[SW:HANDLER] WISP URL:', wispConfig.wispurl);
+
                     if (typeof BareMux === 'undefined') {
-                        console.error("BareMux is not available.");
+                        console.error("[SW:HANDLER] BareMux is not available.");
                         return new Response("BareMux not available.", {
                             status: 500,
                             statusText: "Internal Server Error"
                         });
                     }
 
-                    // Initialize BareMux connection
                     const connection = new BareMux.BareMuxConnection('/baremux/worker.js');
 
                     try {
-                        // Set Epoxy/libcurl transport with WISP server
                         await connection.setTransport('/epoxy-transit/index.mjs', [{
                             wisp: wispConfig.wispurl
                         }]);
-
-                        // Store the connection for future requests
                         scramjet.client = connection;
+                        console.log('[SW:HANDLER] BareMux client initialized successfully');
                     } catch (err) {
-                        console.error('Failed to set BareMux transport:', err);
+                        console.error('[SW:HANDLER] Failed to set BareMux transport:', err);
                         return new Response("BareMux configuration failed.", {
                             status: 500,
                             statusText: "Internal Server Error"
                         });
                     }
+                } else {
+                    console.log('[SW:HANDLER] Reusing existing BareMux client');
                 }
 
-                // Fetch through the BareMux client
+                console.log('[SW:HANDLER] Fetching through BareMux:', e.url);
                 return await scramjet.client.fetch(e.url, {
                     method: e.method,
                     body: e.body,
@@ -317,7 +311,7 @@ function setupScramjetRequestHandler() {
                     duplex: "half",
                 });
             } catch (err) {
-                console.error('Scramjet request handler error:', err);
+                console.error('[SW:HANDLER] Request handler error:', err);
                 return new Response("Proxy error: " + err.message, {
                     status: 502,
                     statusText: "Bad Gateway"
