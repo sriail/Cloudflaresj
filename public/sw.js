@@ -1,26 +1,38 @@
+/**
+ * Service Worker for Scramjet Proxy
+ * Handles all proxy routing and integrates with BareMux and Epoxy transit
+ */
+
 // Calculate the dynamic base path for the Service Worker.
 const swPath = self.location.pathname;
 const basePath = swPath.substring(0, swPath.lastIndexOf('/') + 1);
 
-// Fallback for basePath to ensure it's always defined
-self.basePath = self.basePath || basePath;
-
+// Store Scramjet configuration
+self.basePath = basePath;
 self.$scramjet = {
     files: {
-        wasm: `${basePath}JS/scramjet.wasm.wasm`,
-        sync: `${basePath}JS/scramjet.sync.js`,
+        wasm: '/sj-core/scramjet.wasm.wasm',
+        sync: '/sj-core/scramjet.sync.js',
     }
 };
 
-// Load ALL required scripts at the top level.
-importScripts(`${basePath}JS/scramjet.all.js`);
-importScripts(`${basePath}B/index.js`);
+// Import Scramjet core scripts
+importScripts('/sj-core/scramjet.all.js');
 
+// Import BareMux for the service worker
+importScripts('/baremux/index.js');
+
+// Load the Scramjet service worker worker
 const { ScramjetServiceWorker } = $scramjetLoadWorker();
 
+// Initialize Scramjet service worker instance
 const scramjet = new ScramjetServiceWorker({
-    prefix: basePath + 'JS/scramjet/',
+    prefix: '/sj-core/',
 });
+
+// =====================================================================
+// SERVICE WORKER LIFECYCLE
+// =====================================================================
 
 self.addEventListener('install', (event) => {
     self.skipWaiting();
@@ -30,57 +42,85 @@ self.addEventListener('activate', (event) => {
     event.waitUntil(self.clients.claim());
 });
 
-
-self.addEventListener("fetch", (event) => {
-    event.respondWith((async () => {
-        // Wait for the scramjet config to be loaded before routing.
-        // This can prevent race conditions on initial load.
-        await scramjet.loadConfig();
-        if (scramjet.route(event)) {
-            return scramjet.fetch(event);
-        }
-        return fetch(event.request);
-    })());
-});
+// =====================================================================
+// WISP CONFIGURATION
+// =====================================================================
 
 let wispConfig = {};
 
-// Prevent Race Condition: Create a promise that resolves when the config message is received.
+// Prevent race condition: Create a promise that resolves when the config message is received
 let resolveConfigReady;
 const configReadyPromise = new Promise(resolve => {
     resolveConfigReady = resolve;
 });
 
+// Listen for configuration from the main page
 self.addEventListener("message", ({ data }) => {
-	if (data.type === "config" && data.wispurl) {
-		wispConfig.wispurl = data.wispurl;
+    if (data.type === "config" && data.wispurl) {
+        wispConfig.wispurl = data.wispurl;
+        console.log('Service Worker received WISP URL:', data.wispurl);
         if (resolveConfigReady) {
             resolveConfigReady();
             resolveConfigReady = null; // Ensure it only resolves once
         }
-	}
+    }
 });
 
-// The main Scramjet listener where the proxying logic happens.
+// =====================================================================
+// PROXY ROUTING
+// =====================================================================
+
+// Main fetch handler - routes through Scramjet
+self.addEventListener("fetch", (event) => {
+    event.respondWith((async () => {
+        // Wait for the scramjet config to be loaded before routing
+        // This can prevent race conditions on initial load
+        await scramjet.loadConfig();
+        
+        // Check if Scramjet should route this request
+        if (scramjet.route(event)) {
+            return scramjet.fetch(event);
+        }
+        
+        // Pass through non-routed requests to network
+        return fetch(event.request);
+    })());
+});
+
+// =====================================================================
+// SCRAMJET REQUEST HANDLER
+// =====================================================================
+
+// The main Scramjet listener where the proxying logic happens
 scramjet.addEventListener("request", async (e) => {
-	e.response = (async () => {
-		// Use a single, persistent client instance on the scramjet object.
-		if (!scramjet.client) {
-            // Wait for the WISP URL to be sent from the main page.
+    e.response = (async () => {
+        // Use a single, persistent BareMux client instance on the scramjet object
+        if (!scramjet.client) {
+            // Wait for the WISP URL to be sent from the main page
             await configReadyPromise;
 
             if (!wispConfig.wispurl) {
-                 console.error("WISP URL is missing. Cannot configure BareMux.");
-                 return new Response("WISP URL configuration failed in SW.", { status: 500, statusText: "Internal Server Error" });
+                console.error("WISP URL is missing. Cannot configure BareMux.");
+                return new Response("WISP URL configuration failed in SW.", { 
+                    status: 500, 
+                    statusText: "Internal Server Error" 
+                });
             }
 
-            const connection = new BareMux.BareMuxConnection(`${basePath}B/worker.js`);
-			await connection.setTransport(`${basePath}Ep/index.mjs`, [{ wisp: wispConfig.wispurl }]);
-			scramjet.client = connection;
-		}
+            // Initialize BareMux connection
+            const connection = new BareMux.BareMuxConnection('/baremux/worker.js');
+            
+            // Set Epoxy/libcurl transport with WISP server
+            await connection.setTransport('/epoxy-transit/index.mjs', [{ 
+                websocket: wispConfig.wispurl 
+            }]);
+            
+            // Store the connection for future requests
+            scramjet.client = connection;
+        }
 
-		// Simplified fetch logic without the inspector parts for clarity
-		return await scramjet.client.fetch(e.url, {
+        // Fetch through the BareMux client
+        return await scramjet.client.fetch(e.url, {
             method: e.method,
             body: e.body,
             headers: e.requestHeaders,
@@ -90,5 +130,5 @@ scramjet.addEventListener("request", async (e) => {
             redirect: "manual",
             duplex: "half",
         });
-	})();
+    })();
 });

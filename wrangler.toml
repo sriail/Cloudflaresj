@@ -7,8 +7,13 @@ type = "Text"
 globs = ["**/*.md"]
 fallthrough = true
 
+[build]
+command = "mkdir -p public/sj-core public/baremux public/epoxy-transit && cp -r src/sj-core/* public/sj-core/ && cp -r src/baremux/* public/baremux/ && cp -r src/epoxy-transit/* public/epoxy-transit/"
+cwd = "./"
+
 [assets]
 directory = "./public"
 
 [observability]
 enabled = true
+
