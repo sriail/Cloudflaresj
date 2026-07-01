@@ -76,14 +76,30 @@ const configReadyPromise = new Promise(resolve => {
     resolveConfigReady = resolve;
 });
 
+// Set a timeout for config message (10 seconds)
+let configTimeout = setTimeout(() => {
+    console.warn('Service Worker: Config message not received within 10 seconds');
+    if (resolveConfigReady) {
+        resolveConfigReady();
+        resolveConfigReady = null;
+    }
+}, 10000);
+
 // Listen for configuration from the main page
 self.addEventListener("message", ({ data }) => {
     if (data.type === "config" && data.wispurl) {
         wispConfig.wispurl = data.wispurl;
         console.log('Service Worker received WISP URL:', data.wispurl);
+        
+        // Clear timeout and resolve
+        if (configTimeout) {
+            clearTimeout(configTimeout);
+            configTimeout = null;
+        }
+        
         if (resolveConfigReady) {
             resolveConfigReady();
-            resolveConfigReady = null; // Ensure it only resolves once
+            resolveConfigReady = null;
         }
     }
 });

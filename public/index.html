@@ -337,11 +337,11 @@
       let scramjetReady = false;
 
       /**
-       * Initialize Scramjet proxy framework
+       * Initialize Scramjet proxy framework with improved error handling
        */
       async function initializeScramjet() {
         try {
-          if (scramjetReady) return;
+          if (scramjetReady) return true;
           
           // Load the Scramjet controller
           if (typeof $scramjetLoadController === 'undefined') {
@@ -354,20 +354,34 @@
           scramjet = new scramjetController();
 
           // Initialize BareMux connection
-          const { BareMuxConnection } = await import('/baremux/index.mjs');
-          scramjetConnection = new BareMuxConnection('/baremux/worker.js');
+          try {
+            const { BareMuxConnection } = await import('/baremux/index.mjs');
+            scramjetConnection = new BareMuxConnection('/baremux/worker.js');
+          } catch (err) {
+            console.error('Failed to import BareMux:', err);
+            // Continue anyway - BareMux might not be needed for all operations
+          }
 
           // Determine WebSocket protocol based on page protocol
           const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
           const wispUrl = `${protocol}//${window.location.host}/wisp/`;
 
-          // Set Epoxy/libcurl transport
-          await scramjetConnection.setTransport('/epoxy-transit/index.mjs', [{ wisp: wispUrl }]);
+          // Set Epoxy/libcurl transport if BareMux is available
+          if (scramjetConnection) {
+            try {
+              await scramjetConnection.setTransport('/epoxy-transit/index.mjs', [{ wisp: wispUrl }]);
+            } catch (err) {
+              console.error('Failed to set transport:', err);
+              // Continue - proxy might still work
+            }
+          }
 
           scramjetReady = true;
+          console.log('Scramjet initialized successfully');
           return true;
         } catch (err) {
           console.error('Failed to initialize Scramjet:', err);
+          // Continue without Scramjet - basic navigation might still work
           return false;
         }
       }
@@ -414,9 +428,18 @@
           const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
           console.log('Service Worker registered:', registration);
 
+          // Wait for the service worker to be active
+          await navigator.serviceWorker.ready;
+          
           // Send Wisp URL to service worker
-          if (navigator.serviceWorker.controller) {
-            const wispUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/wisp/`;
+          const wispUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/wisp/`;
+          
+          if (registration.active) {
+            registration.active.postMessage({
+              type: 'config',
+              wispurl: wispUrl
+            });
+          } else if (navigator.serviceWorker.controller) {
             navigator.serviceWorker.controller.postMessage({
               type: 'config',
               wispurl: wispUrl
