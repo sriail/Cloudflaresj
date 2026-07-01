@@ -228,36 +228,32 @@ self.addEventListener("message", ({ data }) => {
 // PROXY ROUTING
 // =====================================================================
 
-// Main fetch handler - routes through Scramjet
 self.addEventListener("fetch", (event) => {
     event.respondWith((async () => {
-        // Ensure Scramjet is initialised (IDB schema ready + instance created).
-        // initScramjet() resolves immediately after the first successful call.
         await initScramjet();
 
-        // If Scramjet is not available, pass through to network
         if (!scramjet) {
             return fetch(event.request);
         }
 
         try {
-            // scramjet.config is set via the {scramjet$type:"loadConfig"} postMessage
-            // that ScramjetController.init() sends after writing config to IDB.
-            // We never call scramjet.loadConfig() directly because its Promise
-            // hangs forever when the IDB "config" store is empty (no config written yet).
-            if (scramjet.config && scramjet.route(event)) {
+            // Wait for config if not yet loaded
+            if (!scramjet.config) {
                 try {
-                    return await scramjet.fetch(event);
-                } catch (fetchErr) {
-                    console.error('Scramjet fetch error:', fetchErr);
-                    // Fall through to network
+                    await scramjet.loadConfig();
+                } catch (err) {
+                    console.warn('Failed to load Scramjet config:', err);
+                    return fetch(event.request);
                 }
+            }
+
+            if (scramjet.route(event)) {
+                return await scramjet.fetch(event);
             }
         } catch (err) {
             console.error('Scramjet processing error:', err);
         }
 
-        // Pass through non-routed requests to network
         return fetch(event.request);
     })());
 });
