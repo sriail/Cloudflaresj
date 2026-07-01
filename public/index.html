@@ -324,36 +324,108 @@
       "use strict";
 
       // =====================================================================
-      // PROXY FRAMEWORK CONFIGURATION
-      // Modify this object to match your specific proxy backend (e.g., Ultraviolet, Scramjet)
+      // SCRAMJET PROXY INITIALIZATION
+      // Uses Scramjet core with BareMux connection and Epoxy transit
       // =====================================================================
-      const ProxyConfig = {
-        prefix: "/service/", // The local prefix your proxy uses
-        encodeUrl: function (url) {
-          // Default: simple encoding. Adjust to match your framework (e.g., Ultraviolet uses bare encoding)
-          return this.prefix + encodeURIComponent(url);
-        },
-        decodeUrl: function (proxiedUrl) {
-          try {
-            const urlObj = new URL(proxiedUrl);
-            if (urlObj.pathname.startsWith(this.prefix)) {
-              return decodeURIComponent(urlObj.pathname.substring(this.prefix.length));
-            }
-          } catch (e) {}
-          return proxiedUrl;
-        },
-        registerServiceWorker: async function () {
-          // Register your proxy service worker here.
-          // Example: await navigator.serviceWorker.register('/sw.js', { scope: this.prefix });
-          if ("serviceWorker" in navigator) {
-            try {
-              await navigator.serviceWorker.register("/sw.js");
-            } catch (err) {
-              console.error("Service Worker registration failed:", err);
-            }
+      
+      // Store Scramjet controller and client globally
+      let scramjet = null;
+      let scramjetConnection = null;
+      let scramjetReady = false;
+
+      /**
+       * Initialize Scramjet proxy framework
+       */
+      async function initializeScramjet() {
+        try {
+          if (scramjetReady) return;
+          
+          // Load the Scramjet controller
+          if (typeof $scramjetLoadController === 'undefined') {
+            console.error('$scramjetLoadController not available. Ensure Scramjet core scripts are loaded.');
+            return false;
           }
+
+          // Get the Scramjet controller
+          const scramjetController = $scramjetLoadController('/sj-core/');
+          scramjet = new scramjetController();
+
+          // Initialize BareMux connection
+          const { BareMuxConnection } = await import('/baremux/index.mjs');
+          scramjetConnection = new BareMuxConnection('/baremux/worker.js');
+
+          // Determine WebSocket protocol based on page protocol
+          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const wispUrl = `${protocol}//${window.location.host}/wisp/`;
+
+          // Set Epoxy/libcurl transport
+          await scramjetConnection.setTransport('/epoxy-transit/index.mjs', [{ wisp: wispUrl }]);
+
+          scramjetReady = true;
+          return true;
+        } catch (err) {
+          console.error('Failed to initialize Scramjet:', err);
+          return false;
         }
-      };
+      }
+
+      /**
+       * Create a proxied URL for a given target URL using Scramjet
+       */
+      function createProxiedUrl(targetUrl) {
+        if (!scramjet) {
+          console.warn('Scramjet not initialized');
+          return targetUrl;
+        }
+        try {
+          return scramjet.encodeUrl(targetUrl);
+        } catch (err) {
+          console.error('Failed to encode URL with Scramjet:', err);
+          return targetUrl;
+        }
+      }
+
+      /**
+       * Decode a proxied URL back to the original URL using Scramjet
+       */
+      function decodeProxiedUrl(proxiedUrl) {
+        if (!scramjet) return proxiedUrl;
+        try {
+          return scramjet.decodeUrl(proxiedUrl);
+        } catch (err) {
+          console.error('Failed to decode URL with Scramjet:', err);
+          return proxiedUrl;
+        }
+      }
+
+      /**
+       * Register the service worker that handles proxy routing
+       */
+      async function registerServiceWorker() {
+        if (!('serviceWorker' in navigator)) {
+          console.warn('Service Workers not supported');
+          return false;
+        }
+
+        try {
+          const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+          console.log('Service Worker registered:', registration);
+
+          // Send Wisp URL to service worker
+          if (navigator.serviceWorker.controller) {
+            const wispUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/wisp/`;
+            navigator.serviceWorker.controller.postMessage({
+              type: 'config',
+              wispurl: wispUrl
+            });
+          }
+
+          return true;
+        } catch (err) {
+          console.error('Service Worker registration failed:', err);
+          return false;
+        }
+      }
 
       // --- Settings Helpers ---
       function loadSettings() {
@@ -436,10 +508,12 @@
 
       // --- Navigation ---
       async function navigateToUrl(input) {
-        await ProxyConfig.registerServiceWorker();
+        // Register service worker and initialize Scramjet
+        await registerServiceWorker();
+        await initializeScramjet();
         
         const targetUrl = formatUrl(input, settings.searchEngine);
-        const proxiedUrl = ProxyConfig.encodeUrl(targetUrl);
+        const proxiedUrl = createProxiedUrl(targetUrl);
 
         // Remove old frame if exists
         if (currentFrame) {
@@ -452,6 +526,7 @@
           urlMonitorInterval = null;
         }
 
+        // Create iframe for displaying proxied content
         currentFrame = document.createElement("iframe");
         currentFrame.id = "proxy-frame";
         frameContainer.appendChild(currentFrame);
@@ -488,7 +563,7 @@
           try {
             const iframeUrl = currentFrame.contentWindow.location.href;
             if (iframeUrl && !iframeUrl.startsWith("about:blank")) {
-              const decodedUrl = ProxyConfig.decodeUrl(iframeUrl);
+              const decodedUrl = decodeProxiedUrl(iframeUrl);
               if (decodedUrl && decodedUrl !== navbarUrl.value && decodedUrl !== "about:blank") {
                 navbarUrl.value = decodedUrl;
               }
