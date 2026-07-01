@@ -11,7 +11,7 @@ const basePath = swPath.substring(0, swPath.lastIndexOf('/') + 1);
 self.basePath = basePath;
 self.$scramjet = {
     files: {
-        wasm: '/sj-core/scramjet.wasm.wasm',
+        wasm: '/sj-core/scramjet.wasm.wasm',    // Note: Double .wasm extension is intentional (Scramjet naming convention)
         sync: '/sj-core/scramjet.sync.js',
     }
 };
@@ -112,7 +112,7 @@ scramjet.addEventListener("request", async (e) => {
             
             // Set Epoxy/libcurl transport with WISP server
             await connection.setTransport('/epoxy-transit/index.mjs', [{ 
-                websocket: wispConfig.wispurl 
+                wisp: wispConfig.wispurl 
             }]);
             
             // Store the connection for future requests

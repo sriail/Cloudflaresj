@@ -17,7 +17,7 @@ const PathConfig = {
     bundle: '/sj-core/scramjet.bundle.js',    // Bundled version
     sync: '/sj-core/scramjet.sync.js',        // Sync version
     sw: '/sj-core/scramjet.sw.js',            // Service Worker version
-    wasm: '/sj-core/scramjet.wasm.wasm',      // WASM binary
+    wasm: '/sj-core/scramjet.wasm.wasm',      // WASM binary (double .wasm extension is intentional)
   },
 
   // BareMux paths - served from /baremux/
@@ -124,51 +124,20 @@ const ScramjetConfig = {
 // =====================================================================
 // INTEGRATION CHECKLIST
 // Ensures all components are properly wired
+// NOTE: These functions are for Node.js/build-time verification only
 // =====================================================================
 
 const IntegrationChecklist = {
-  // Verify Cloudflare Worker entry point exists
-  workerEntryPoint: () => {
-    try {
-      require('./src/worker.js');
-      return { status: 'OK', message: 'Worker entry point found' };
-    } catch (e) {
-      return { status: 'ERROR', message: `Worker entry point error: ${e.message}` };
-    }
-  },
-
-  // Verify Wisp server is properly imported
-  wispServer: () => {
-    try {
-      require('./src/wisp/wisp.js');
-      return { status: 'OK', message: 'Wisp server module found' };
-    } catch (e) {
-      return { status: 'ERROR', message: `Wisp server error: ${e.message}` };
-    }
-  },
-
-  // Verify asset directories exist
-  assetDirectories: () => {
-    const fs = require('fs');
-    const dirs = [
-      './src/sj-core/',
-      './src/baremux/',
-      './src/epoxy-transit/',
-      './public/',
-    ];
-    
-    const results = dirs.map(dir => ({
-      path: dir,
-      exists: fs.existsSync(dir),
-    }));
-    
-    const allExist = results.every(r => r.exists);
-    return {
-      status: allExist ? 'OK' : 'WARNING',
-      message: allExist ? 'All asset directories present' : 'Some directories missing',
-      details: results,
-    };
-  },
+  // Build-time checks can be performed by scripts
+  // Runtime checks should be done in the browser via console
+  
+  notes: [
+    'Verify worker entry point exists at ./src/worker.js',
+    'Verify Wisp server module exists at ./src/wisp/wisp.js',
+    'Verify all asset directories exist: ./src/sj-core/, ./src/baremux/, ./src/epoxy-transit/',
+    'Run build: wrangler build',
+    'Test locally: wrangler dev',
+  ],
 };
 
 // =====================================================================
@@ -216,20 +185,9 @@ const DeploymentNotes = {
 // EXPORTS
 // =====================================================================
 
-// Node.js / CommonJS export
-if (typeof module !== 'undefined' && module.exports) {
+// CommonJS export for Node.js
+if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
   module.exports = {
-    PathConfig,
-    WispServerConfig,
-    ScramjetConfig,
-    IntegrationChecklist,
-    DeploymentNotes,
-  };
-}
-
-// ES Module export
-if (typeof export !== 'undefined') {
-  export {
     PathConfig,
     WispServerConfig,
     ScramjetConfig,

@@ -342,7 +342,7 @@
           
           // Load the Scramjet controller
           if (typeof $scramjetLoadController === 'undefined') {
-            console.error('$scramjetLoadController not available. Ensure service worker loaded.');
+            console.error('$scramjetLoadController not available. Ensure Scramjet core scripts are loaded.');
             return false;
           }
 
@@ -359,7 +359,7 @@
           const wispUrl = `${protocol}//${window.location.host}/wisp/`;
 
           // Set Epoxy/libcurl transport
-          await scramjetConnection.setTransport('/epoxy-transit/index.mjs', [{ websocket: wispUrl }]);
+          await scramjetConnection.setTransport('/epoxy-transit/index.mjs', [{ wisp: wispUrl }]);
 
           scramjetReady = true;
           return true;
@@ -526,7 +526,7 @@
           urlMonitorInterval = null;
         }
 
-        // Create a frame using Scramjet if available
+        // Create iframe for displaying proxied content
         currentFrame = document.createElement("iframe");
         currentFrame.id = "proxy-frame";
         frameContainer.appendChild(currentFrame);
