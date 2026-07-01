@@ -3,6 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Suppress the automatic /favicon.ico browser request that returns 500 -->
+    <link rel="icon" href="data:,">
     <title>Scramjet</title>
     <style>
       /* --- CSS Variables / Theming --- */
@@ -349,11 +351,35 @@
             return false;
           }
 
-          // Get the Scramjet controller
-          const scramjetController = $scramjetLoadController('/sj-core/');
-          scramjet = new scramjetController();
+          // Get the ScramjetController class from the bundle (returns {ScramjetController, ScramjetFrame})
+          const { ScramjetController } = $scramjetLoadController();
+          scramjet = new ScramjetController({
+            prefix: '/scramjet/',
+            files: {
+              wasm: '/sj-core/scramjet.wasm.wasm', // double .wasm extension is intentional (Scramjet naming convention)
+              sync: '/sj-core/scramjet.sync.js',
+              all: '/sj-core/scramjet.all.js',
+            }
+          });
 
-          // Initialize BareMux connection
+          // Initialize controller: opens IndexedDB schema and pushes config to SW if active
+          await scramjet.init();
+
+          // Belt-and-suspenders: ask the active SW to load the Scramjet config from
+          // IDB directly.  scramjet.init() above has already written the config to
+          // IDB, but its own postMessage targets navigator.serviceWorker.controller
+          // which can still be null on the very first install (clients.claim() may
+          // not have fired yet).  Sending triggerLoadConfig to registration.active
+          // bypasses that race entirely.
+          try {
+            const reg = await navigator.serviceWorker.getRegistration('/');
+            if (reg?.active) {
+              reg.active.postMessage({ type: 'triggerLoadConfig' });
+            }
+          } catch (_) { /* ignore — SW will receive the loadConfig from controller once claimed */ }
+
+          // Initialize BareMux connection (also registers the port-exchange listener so
+          // the SW's internal BareClient can obtain a SharedWorker port immediately)
           try {
             const { BareMuxConnection } = await import('/baremux/index.mjs');
             scramjetConnection = new BareMuxConnection('/baremux/worker.js');
@@ -429,6 +455,20 @@
 
           // Wait for the service worker to be active
           await navigator.serviceWorker.ready;
+
+          // If the SW has just been installed for the first time it will not be
+          // controlling this page yet (that requires clients.claim() to fire in
+          // the SW's activate handler).  Wait up to 3 s for the controller to
+          // become available so that scramjet.init()'s postMessage — which
+          // targets navigator.serviceWorker.controller — is not silently dropped.
+          if (!navigator.serviceWorker.controller) {
+            await Promise.race([
+              new Promise(resolve =>
+                navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true })
+              ),
+              new Promise(resolve => setTimeout(resolve, 3000)),
+            ]);
+          }
 
           // Send Wisp URL to service worker
           const wispUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/wisp/`;
@@ -711,6 +751,19 @@
 
       document.addEventListener("fullscreenchange", handleFullscreenChange);
       document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+
+      // Eagerly wire up the proxy on page load so that:
+      // 1. The IDB schema exists before the SW first tries to read it.
+      // 2. BareMux SharedWorker is running and the port-exchange listener is in place,
+      //    stopping the SW's BareClient retry storm immediately.
+      (async () => {
+        try {
+          await registerServiceWorker();
+          await initializeScramjet();
+        } catch (e) {
+          console.warn('Proxy pre-init failed (will retry on navigation):', e);
+        }
+      })();
     </script>
   </body>
 </html>
