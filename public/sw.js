@@ -119,14 +119,24 @@ self.addEventListener("fetch", (event) => {
         try {
             // Wait for the scramjet config to be loaded before routing
             // This can prevent race conditions on initial load
-            await scramjet.loadConfig();
+            try {
+                await scramjet.loadConfig();
+            } catch (configErr) {
+                console.error('Scramjet loadConfig error (likely IndexedDB):', configErr);
+                // Continue anyway - Scramjet might still work
+            }
             
             // Check if Scramjet should route this request
             if (scramjet.route(event)) {
-                return await scramjet.fetch(event);
+                try {
+                    return await scramjet.fetch(event);
+                } catch (fetchErr) {
+                    console.error('Scramjet fetch error:', fetchErr);
+                    // Fall through to network
+                }
             }
         } catch (err) {
-            console.error('Scramjet fetch error:', err);
+            console.error('Scramjet processing error:', err);
         }
         
         // Pass through non-routed requests to network

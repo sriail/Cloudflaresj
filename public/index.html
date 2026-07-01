@@ -327,9 +327,39 @@
       "use strict";
 
       // =====================================================================
-      // SCRAMJET PROXY INITIALIZATION
-      // Uses Scramjet core with BareMux connection and Epoxy transit
-      // =====================================================================
+     // INDEXEDDB CLEANUP AND INITIALIZATION
+     // =====================================================================
+
+     /**
+      * Clean up IndexedDB to prevent store not found errors
+      * This ensures a fresh state for Scramjet initialization
+      */
+     async function cleanupIndexedDB() {
+       try {
+         // Get all database names
+         const dbs = await indexedDB.databases();
+          
+         // Delete Scramjet-related databases to ensure clean state
+         for (const db of dbs) {
+           if (db.name && (db.name.includes('scramjet') || db.name.includes('Scramjet'))) {
+             const request = indexedDB.deleteDatabase(db.name);
+             request.onerror = () => console.warn(`Failed to delete database ${db.name}`);
+             request.onsuccess = () => console.debug(`Deleted database ${db.name}`);
+           }
+         }
+       } catch (err) {
+         console.debug('IndexedDB cleanup not available:', err.message);
+         // This is not critical - continue anyway
+       }
+     }
+
+     // Clean up IndexedDB on page load
+     window.addEventListener('load', cleanupIndexedDB);
+
+     // =====================================================================
+     // SCRAMJET PROXY INITIALIZATION
+     // Uses Scramjet core with BareMux connection and Epoxy transit
+     // =====================================================================
       
       // Store Scramjet controller and client globally
       let scramjet = null;
