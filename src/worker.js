@@ -17,13 +17,40 @@ export default {
       return new Response('Expected Upgrade: websocket', { status: 426 });
     }
     
-    // Serve static assets from public directory
-    // Use Cloudflare ASSETS binding for static files
+    // Get response from ASSETS binding
+    let response = null;
     if (env.ASSETS) {
-      return env.ASSETS.fetch(request);
+      response = await env.ASSETS.fetch(request);
+    } else {
+      return new Response('Asset serving not configured', { status: 500 });
     }
-    
-    // Fallback if ASSETS binding is not available
-    return new Response('Asset serving not configured', { status: 500 });
+
+    // Add security headers for HTML responses
+    if (response.headers.get('content-type')?.includes('text/html')) {
+      const newHeaders = new Headers(response.headers);
+      
+      // Add CSP header to allow framing on the same origin
+      newHeaders.set('Content-Security-Policy', 
+        "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; " +
+        "style-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data: blob: https:; " +
+        "font-src 'self' data:; " +
+        "connect-src 'self' ws: wss: https:; " +
+        "frame-ancestors 'self'; " +
+        "object-src 'none'; " +
+        "base-uri 'self';"
+      );
+      
+      // Add header to allow any site to be framed by this origin
+      newHeaders.set('X-Frame-Options', 'ALLOWALL');
+      
+      response = new Response(response.body, response);
+      for (const [key, value] of newHeaders) {
+        response.headers.set(key, value);
+      }
+    }
+
+    return response;
   },
 };
